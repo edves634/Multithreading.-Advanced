@@ -1,109 +1,92 @@
-# Описание проекта
+```markdown
+# News Aggregator Application
 
-Этот проект представляет собой RESTful веб-сервис на базе Spring Boot, который позволяет загружать изображения, конвертировать их в форматы PNG или SVG и удалять фон. После конвертации изображения упаковываются в ZIP-архив и отправляются обратно пользователю. В проекте также реализовано асинхронное (многопоточное) выполнение конвертации изображений для повышения производительности.
+## Контроллер новостей (`NewsController`)
 
-## Зависимости
+Класс `NewsController` предоставляет REST API для доступа к агрегированным новостям.
 
-Проект использует следующие основные зависимости:
+### Основные характеристики:
 
-- Spring Boot
-- Log4j для логирования
-- Spring Web
-- Swagger для документации API
+1. **REST Endpoint**:
+   - `GET /api/news` - возвращает список новостей из всех источников
+   - Ответ в формате JSON
+   - Автоматическая сериализация объектов `NewsItem`
 
-## Класс `ImageProcessingController`
+2. **Зависимости**:
+   - Внедрение сервиса `NewsService` через конструктор
+   - Обработка исключений многопоточности (`ExecutionException`, `InterruptedException`)
 
-Этот контроллер предоставляет два основных эндпоинта для обработки изображений:
-
-### `convertAndZipImages`
-
-Эндпоинт принимает изображения и параметры конвертации, выполняет конвертацию в один поток и возвращает архив с обработанными изображениями.
-
-**Аннотации:**
-
-- `@RestController` - обозначает класс как контроллер Spring MVC.
-- `@RequestMapping("/api/image")` - базовый URL для всех запросов к данному контроллеру.
-- `@PostMapping(value = "/convert", consumes = {"multipart/form-data"})` - обработка POST-запросов для конвертации изображений.
-- `@Operation` - описание метода для документации Swagger.
-- `@ApiResponses` - описание возможных ответов для документации Swagger.
-
-**Метод:**
+### Реализация контроллера:
 
 ```java
-public ResponseEntity<byte[]> convertAndZipImages(
-        @RequestPart(value = "files", required = true) MultipartFile[] files,
-        @RequestParam("format") String format,
-        @RequestParam(value = "quality", defaultValue = "0.8") float quality) {
-```
-- `MultipartFile[] files` - массив загружаемых изображений.
-- `String format` - целевой формат конвертации (PNG или SVG).
-- `float quality` - качество изображения (по умолчанию 0.8).
+@RestController
+@RequestMapping("/api/news")
+public class NewsController {
+    
+    private final NewsService newsService;
 
-**Логика:**
+    public NewsController(NewsService newsService) {
+        this.newsService = newsService;
+    }
 
-1. Фиксируется время начала выполнения.
-2. Проверяется формат (должен быть либо PNG, либо SVG).
-3. Вызываются методы сервисов `imageProcessingService` и `zipService` для обработки изображений и их упаковки.
-4. Фиксируется время окончания выполнения и выводится в лог.
-5. Возвращается ZIP-архив с конвертированными изображениями.
-
-### `convertAndZipImagesParallel`
-
-Эндпоинт принимает изображения и параметры конвертации, выполняет конвертацию в многопоточной среде и возвращает архив с обработанными изображениями.
-
-**Аннотации:**
-
-- `@PostMapping(value = "/convert-parallel", consumes = {"multipart/form-data"})` - обработка POST-запросов для параллельной конвертации изображений.
-- `@Operation` - описание метода для документации Swagger.
-- `@ApiResponses` - описание возможных ответов для документации Swagger.
-
-**Метод:**
-
-```java
-public ResponseEntity<byte[]> convertAndZipImagesParallel(
-        @RequestPart(value = "files", required = true) MultipartFile[] files,
-        @RequestParam("format") String format,
-        @RequestParam(value = "quality", defaultValue = "0.8") float quality) {
-```
-- `MultipartFile[] files` - массив загружаемых изображений.
-- `String format` - целевой формат конвертации (PNG или SVG).
-- `float quality` - качество изображения (по умолчанию 0.8).
-
-**Логика:**
-
-1. Фиксируется время начала выполнения.
-2. Проверяется формат (должен быть либо PNG, либо SVG).
-3. Вызываются методы сервисов `imageProcessingService.convertImagesParallel` и `zipService.zipFiles` для параллельной обработки изображений и их упаковки.
-4. Фиксируется время окончания выполнения и выводится в лог.
-5. Возвращается ZIP-архив с конвертированными изображениями.
-
-## Многопоточность
-
-Второй метод (`convertAndZipImagesParallel`) использует многопоточность для повышения производительности конвертации изображений. Это особенно полезно при обработке большого количества изображений или при их большом размере. В Java многопоточность может быть реализована с помощью класса `Thread` или интерфейса `Runnable`, но в данном проекте это может быть скрыто за логикой сервисного уровня.
-
-## Логирование
-
-Логирование выполняется с помощью библиотеки Log4j. Оно используется для отслеживания текущего состояния приложения, ошибок и времени выполнения операций.
-
-```java
-private static final Logger logger = LogManager.getLogger(ImageProcessingController.class);
+    @GetMapping
+    public List<NewsItem> getAggregatedNews() throws ExecutionException, InterruptedException {
+        return newsService.getAggregatedNews();
+    }
+}
 ```
 
-Примеры использования логов:
+### Особенности работы:
 
-```java
-logger.info("Single-threaded conversion took {} ms", (endTime - startTime));
-logger.error("Error during conversion and zipping images", e);
+1. **Параллельная загрузка**:
+    - Запрос запускает параллельную загрузку из всех источников
+    - Результаты автоматически сортируются по дате (новые сначала)
+
+2. **Обработка ошибок**:
+    - Внутренние ошибки сервиса обрабатываются и логируются
+    - Возвращается частичный результат при ошибках отдельных источников
+
+3. **Масштабируемость**:
+    - Легко добавить новые параметры запроса:
+   ```java
+   @GetMapping("/filtered")
+   public List<NewsItem> getFilteredNews(@RequestParam String category) {
+       // реализация фильтрации
+   }
+   ```
+
+### Пример ответа:
+
+```json
+[
+    {
+        "title": "Последние новости о технологии",
+        "description": "Компания X представила новую технологию...",
+        "url": "https://example.com/news/123",
+        "publishedAt": "2023-05-20T10:00:00Z",
+        "sourceName": "TechCrunch"
+    },
+    {
+        "title": "Экономические изменения",
+        "description": "Центробанк объявил о...",
+        "url": "https://example.com/news/456",
+        "publishedAt": "2023-05-19T15:30:00Z",
+        "sourceName": "BBC News"
+    }
+]
 ```
 
-## Запуск проекта
+### Рекомендации по развитию:
 
-1. Склонируйте репозиторий и импортируйте его в вашу среду разработки.
-2. Убедитесь, что у вас установлен Maven или Gradle.
-3. Добавьте зависимости.
-4. Запустите проект как Spring Boot приложение.
-5. Используйте Postman или любой другой инструмент для отправки запросов на эндпоинты `/api/image/convert` или `/api/image/convert-parallel`.
+1. Добавить:
+    - Пагинацию (`/api/news?page=1&size=10`)
+    - Фильтрацию по источникам или категориям
+    - Кэширование ответов
 
-## Заключение
+2. Улучшить:
+    - Детализированную обработку ошибок
+    - Swagger-документацию API
+    - Метрики времени ответа
 
-Этот проект служит хорошей отправной точкой для начинающих изучать Java, Spring Boot и многопоточность. Он демонстрирует базовые принципы работы с RESTful сервисами, загрузкой файлов, конвертацией изображений и многопоточностью.
+Этот контроллер обеспечивает простой и эффективный доступ к агрегированным новостям через REST API.
+```
